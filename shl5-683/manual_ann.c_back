@@ -1,0 +1,173 @@
+#include "manual_ann.h"
+///<����������������������������������������������������������������������
+
+send_infomation_t send_ts_cmd_to_control;
+
+cyg_handle_t  counter_handle;
+cyg_handle_t alarm_handle_monitor;
+cyg_alarm alarm_object_monitor;
+
+int CreateEAMPToSyncTimer(unsigned int msecond)
+{
+	cyg_clock_to_counter(cyg_real_time_clock(),&counter_handle);
+	cyg_alarm_create(counter_handle,SendSYNCPackageToEamp,0,&alarm_handle_monitor,&alarm_object_monitor);
+	cyg_alarm_initialize(alarm_handle_monitor,cyg_current_time()+(100),msecond);
+	cyg_alarm_disable(alarm_handle_monitor);
+	return 0;
+}
+
+
+void SetTSCmd(unsigned char event_type,
+                    char *src_devices_name,	unsigned char src_devices_no,
+                    unsigned char state_request,unsigned char request_or_over,
+                    unsigned char line_number,unsigned char region_number,
+                    unsigned int broadcast_sequence,unsigned char broadcast_times,
+                    unsigned char arrived_station,unsigned char current_station_code,unsigned char station_effective,unsigned char whether_pre_read,
+                    unsigned char dst_device_number)
+{
+    int current_event = (int)event_type;
+    strcpy((char *)send_ts_cmd_to_control.src_devices_name ,src_devices_name);
+    send_ts_cmd_to_control.src_devices_no = src_devices_no;
+
+    send_ts_cmd_to_control.event_ptt_state = 0;//wilson 2012-12-29
+
+
+    if(current_event == MANUAL_ANN_EVENT)
+    {
+			send_ts_cmd_to_control.event_type_ann = event_type;
+
+			send_ts_cmd_to_control.event_type_intercom = INTERCOM_IDLE;	
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_active = state_request;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_begin_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.line_number= line_number;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code = current_station_code;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_response = 0;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_pre_read = whether_pre_read;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = arrived_station;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = ccu_state.ccu_region_info[line_number - 3].current_region_info.start_station_no;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = ccu_state.ccu_region_info[line_number - 3].current_region_info.over_station_no;
+
+    }
+}
+
+int SetCmd(void *param_table )
+{
+    unsigned char state_request = 0;
+    unsigned char request_or_over = 0;
+    unsigned char line_number = 0;
+    unsigned char region_number = 0;
+    unsigned int broadcast_sequence = 0;
+    unsigned char broadcast_times = 0;
+    unsigned char stop_or_leave = 0;
+    unsigned char current_station_code = 0;
+    unsigned char current_station_effective = 0;
+    unsigned char manual_pre_read = 0;
+    unsigned char dst_device_number = 0;
+    unsigned char door_side = 0;
+
+    bcu_screen_param_t *param_table_ptr = (bcu_screen_param_t  *)param_table;
+
+    if( NULL== param_table_ptr )
+    {
+        //printf("TouchScreenSetCmd:  null pointer\n");
+        return -1;
+    }
+
+    if( param_table_ptr->event_type == MANUAL_ANN_EVENT)
+    {
+		    diag_printf("-----------------------------MANUAL_ANN_EVENT-------------\n");
+            state_request = param_table_ptr->state_active;  // 1
+            request_or_over = param_table_ptr->begin_or_over; // 1
+            line_number = param_table_ptr->line_number; // 3
+            current_station_code = param_table_ptr->current_station_code; // ?
+            stop_or_leave = param_table_ptr->stop_or_leave;  // ?
+            manual_pre_read = param_table_ptr->manual_pre_read; // 0
+    }else{
+		return -1;
+	}
+
+    // �����������������������������������������
+    SetTSCmd( param_table_ptr->event_type,    // event type
+                     ccu_state.ccu_info.devices_name,            // source device name
+                     ccu_state.ccu_info.devices_no, // source device number
+                     state_request,   // state_request -----> active
+                     request_or_over, // request or over ----> begin
+                     line_number,       // line_number
+                     region_number,
+                     broadcast_sequence,  // broadcast_sequence
+                     broadcast_times,        // broadcast_times
+                     stop_or_leave,         // arrived or predict
+                     current_station_code,  // current_station_code
+                     current_station_effective,
+                     manual_pre_read,
+                     dst_device_number     // dst_device_number for intercom
+                   );
+    if(param_table_ptr->event_type == MANUAL_ANN_EVENT)
+    {
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = 15;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = 1;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.line_number = 3;//bcu_state.this_line_no;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.up_down = 1;//bcu_state.region_station_info.os_running_up_or_down;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.door_side = door_side;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.key_side = 0;//bcu_state.bcu_info.devices_no;
+    }
+
+    if(send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code >= 15 && send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code > 0)
+    {
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.up_down = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = 15;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.next_station_code = 2;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = 0;
+    }
+    else
+    {
+
+    }
+    network_send_package_t manual_ann_info = {"\0",0};
+    memcpy((char *)&manual_ann_info.send_information,(char *)&send_ts_cmd_to_control,sizeof(send_infomation_t));
+    strcpy((char *)manual_ann_info.send_information.src_devices_name,"CCU");
+    manual_ann_info.send_information.src_devices_no = 1;
+    manual_ann_info.send_information.event_type_intercom = INTERCOM_IDLE;
+    manual_ann_info.dst_devices_no =  MUL_DST_NO;
+    strcpy((char *)manual_ann_info.dst_devices_name,"EAMP");
+
+    BlockBufferWrite(ccu_state.ccu_send_cmd_buffer_id, (void *)&manual_ann_info, sizeof(manual_ann_info));
+    //cyg_alarm_disable(alarm_handle_monitor);
+    return 0;
+}
+
+
+void SetTSManualCMDPackage(int param_stop_or_leave,int param_open_door_flag)
+{///<���������������������������������������������������������
+
+   diag_printf("zhw **** run into SetManualCmd function\n");
+    diag_printf("MANUAL_ANN_EVENT info:param_stop_or_leave=%d\n", param_stop_or_leave);
+    bcu_screen_param_t  touch_cmd_param = {0};
+    touch_cmd_param.event_type = MANUAL_ANN_EVENT;
+
+    diag_printf(">>>>> MANUAL_ANN_EVENT = %d\n",MANUAL_ANN_EVENT);
+
+        touch_cmd_param.state_active = 1;
+        touch_cmd_param.begin_or_over = 1; // 1
+        touch_cmd_param.line_number = 3;  //3
+        touch_cmd_param.manual_pre_read = 0;//0
+        touch_cmd_param.current_station_code = ccu_state.region_station_info.os_current_station_no;//?
+        diag_printf("ccu_state.region_station_info.os_current_station_no = %d\n",ccu_state.region_station_info.os_current_station_no);
+        touch_cmd_param.stop_or_leave = param_stop_or_leave; //1
+    	cyg_alarm_enable(alarm_handle_monitor);
+	
+    touch_cmd_param.begin_station_code = ccu_state.ccu_region_info[0].current_region_info.start_station_no;
+    touch_cmd_param.over_station_code = ccu_state.ccu_region_info[0].current_region_info.over_station_no;
+    touch_cmd_param.region_number = ccu_state.ccu_region_info[0].current_region_info.region_no;
+
+    SetCmd( (void *)&touch_cmd_param );
+   
+   
+   }

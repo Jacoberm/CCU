@@ -1,0 +1,411 @@
+#include "manual_ann.h"
+///<��ݴ�����ͨ�Ÿ�ʽ������Ӧ�����
+
+send_infomation_t send_ts_cmd_to_control;
+
+cyg_handle_t  counter_handle;
+cyg_handle_t alarm_handle_monitor;
+cyg_alarm alarm_object_monitor;
+
+int CreateEAMPToSyncTimer(unsigned int msecond)
+{
+	cyg_clock_to_counter(cyg_real_time_clock(),&counter_handle);
+	cyg_alarm_create(counter_handle,SendSYNCPackageToEamp,0,&alarm_handle_monitor,&alarm_object_monitor);
+	cyg_alarm_initialize(alarm_handle_monitor,cyg_current_time()+(100),msecond);
+	cyg_alarm_disable(alarm_handle_monitor);
+	return 0;
+}
+
+
+void SetTSCmd(unsigned char event_type,
+                    char *src_devices_name,	unsigned char src_devices_no,
+                    unsigned char state_request,unsigned char request_or_over,
+                    unsigned char line_number,unsigned char region_number,
+                    unsigned int broadcast_sequence,unsigned char broadcast_times,
+                    unsigned char arrived_station,unsigned char current_station_code,unsigned char station_effective,unsigned char whether_pre_read,
+                    unsigned char dst_device_number)
+{
+    int current_event = (int)event_type;
+    strcpy((char *)send_ts_cmd_to_control.src_devices_name ,src_devices_name);
+    send_ts_cmd_to_control.src_devices_no = src_devices_no;
+
+    send_ts_cmd_to_control.event_ptt_state = 0;//wilson 2012-12-29
+
+
+    if(current_event == OCC_EVENT || current_event == LIVE_ANN_EVENT || current_event == EMERG_ANN_EVENT ||
+       current_event == EMERG_ANN_EVENT || current_event == MANUAL_ANN_EVENT || current_event == SKIP_STATION||
+       current_event == LINE_NUMBER_CHANGE_EVENT)
+    {
+        send_ts_cmd_to_control.event_type_ann = event_type;
+
+        send_ts_cmd_to_control.event_type_intercom = INTERCOM_IDLE;
+    }
+    else if(current_event == D2P_INTERCOMM_EVENT || current_event == D2D_INTERCOMM_EVENT || current_event == D2D_HANGUP_D2P_EVENT)
+    {
+        send_ts_cmd_to_control.event_type_intercom = event_type;
+        send_ts_cmd_to_control.event_type_ann = ANN_IDLE;
+    }
+    else
+    {
+        send_ts_cmd_to_control.event_type_ann = ANN_IDLE;
+        send_ts_cmd_to_control.event_type_intercom = INTERCOM_IDLE;
+    }
+    switch(current_event)
+    {
+        case SKIP_STATION:
+            send_ts_cmd_to_control.event_info_ann.station_information.line_number = line_number;
+            send_ts_cmd_to_control.event_info_ann.station_information.station_no = current_station_code;
+            send_ts_cmd_to_control.event_info_ann.station_information.effective = station_effective;
+            break;
+        case OCC_EVENT:
+            send_ts_cmd_to_control.event_info_ann.occ_announce.occ_active = state_request;
+            send_ts_cmd_to_control.event_info_ann.occ_announce.occ_begin_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_ann.occ_announce.occ_response = 0;
+            break;
+        case LIVE_ANN_EVENT:
+            send_ts_cmd_to_control.event_info_ann.live_announce.live_active = state_request;
+            send_ts_cmd_to_control.event_info_ann.live_announce.live_begin_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_ann.live_announce.live_response = 0;
+            break;
+        case EMERG_ANN_EVENT:
+            send_ts_cmd_to_control.event_info_ann.emerg_announce.emerg_active = state_request;
+            send_ts_cmd_to_control.event_info_ann.emerg_announce.emerg_response = 0;
+            send_ts_cmd_to_control.event_info_ann.emerg_announce.emerg_begin_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_ann.emerg_announce.emerg_sequence = broadcast_sequence;
+            send_ts_cmd_to_control.event_info_ann.emerg_announce.emerg_times = broadcast_times;
+            break;
+        case MANUAL_ANN_EVENT:
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_active = state_request;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_begin_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.line_number= line_number;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code = current_station_code;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_response = 0;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_pre_read = whether_pre_read;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = arrived_station;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = ccu_state.ccu_region_info[line_number - 3].current_region_info.start_station_no;
+            send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = ccu_state.ccu_region_info[line_number - 3].current_region_info.over_station_no;
+
+//			diag_printf("!!!!!!!!!!!!!!!!!!!!!!!!\n");
+//			diag_printf("line_number = %d\n",line_number);
+//			diag_printf("current_station_code = %d\n",current_station_code);
+//			diag_printf("station[line_number - 3][current_station_code].open_door_side = %d\n",station[line_number - 3][current_station_code].open_door_side);
+//			send_ts_cmd_to_control.event_info_ann.manual_annnounce.door_side = station[line_number - 3][current_station_code].open_door_side;
+            break;
+        case D2D_INTERCOMM_EVENT:
+            send_ts_cmd_to_control.event_info_intercom.d2d_intercomm.d2d_intercomm_active = state_request;
+            send_ts_cmd_to_control.event_info_intercom.d2d_intercomm.d2d_intercomm_request_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_intercom.d2d_intercomm.d2d_intercomm_bcu_device_no = dst_device_number;
+            break;
+        case D2P_INTERCOMM_EVENT:
+            send_ts_cmd_to_control.event_info_intercom.d2p_intercomm.d2p_intercomm_active = state_request;
+            send_ts_cmd_to_control.event_info_intercom.d2p_intercomm.d2p_intercomm_response = 0;
+            send_ts_cmd_to_control.event_info_intercom.d2p_intercomm.d2p_intercomm_request_or_over = request_or_over;
+            send_ts_cmd_to_control.event_info_intercom.d2p_intercomm.d2p_intercomm_pcu_device_no = dst_device_number;
+           //???? send_ts_cmd_to_control.event_info_intercom.d2p_intercomm.d2p_intercomm_bcu_device_no = ccu_state.ccu_info.devices_no;
+            break;
+
+        case LINE_NUMBER_CHANGE_EVENT:
+            send_ts_cmd_to_control.event_info_ann.line_info.line_no = line_number;
+            send_ts_cmd_to_control.event_info_ann.line_info.region_no = region_number;
+            break;
+        default:
+            break;
+    }
+}
+
+
+void SetLineAndRegionNoCmd(int param_line_no,int param_region_no)
+{
+    memset((char *)&send_ts_cmd_to_control,0,sizeof(send_infomation_t));
+
+    send_ts_cmd_to_control.event_info_ann.line_info.terminal_station_no = 6;
+
+    send_ts_cmd_to_control.event_info_ann.line_info.start_station_no = 1;
+
+    send_ts_cmd_to_control.event_info_ann.line_info.line_no = param_line_no;
+
+    send_ts_cmd_to_control.event_info_ann.line_info.region_no = param_region_no;
+
+    send_ts_cmd_to_control.event_info_ann.line_info.up_or_down = param_region_no;
+
+    network_send_package_t line_change_info = {"\0",0};
+    memcpy((char *)&line_change_info.send_information,(char *)&send_ts_cmd_to_control,sizeof(send_infomation_t));
+    strcpy((char *)line_change_info.send_information.src_devices_name,"CCU");
+    line_change_info.send_information.src_devices_no = 1;
+    line_change_info.send_information.event_type_ann = LINE_NUMBER_CHANGE_EVENT;
+    line_change_info.send_information.event_type_intercom = INTERCOM_IDLE;
+    line_change_info.dst_devices_no =  MUL_DST_NO;
+    strcpy((char *)line_change_info.dst_devices_name,"EAMP");
+}
+
+
+int SetCmd(void *param_table )
+{
+    unsigned char state_request = 0;
+    unsigned char request_or_over = 0;
+    unsigned char line_number = 0;
+    unsigned char region_number = 0;
+    unsigned int broadcast_sequence = 0;
+    unsigned char broadcast_times = 0;
+    unsigned char stop_or_leave = 0;
+    unsigned char current_station_code = 0;
+    unsigned char current_station_effective = 0;
+    unsigned char manual_pre_read = 0;
+    unsigned char dst_device_number = 0;
+    unsigned char door_side = 0;
+
+    bcu_screen_param_t *param_table_ptr = (bcu_screen_param_t  *)param_table;
+
+    if( NULL== param_table_ptr )
+    {
+        //printf("TouchScreenSetCmd:  null pointer\n");
+        return -1;
+    }
+
+    switch( param_table_ptr->event_type )
+    {
+        case EMERG_ANN_EVENT:
+//			//printf("-----------------------------EMERG_ANN_EVENT-------------\n");
+            state_request = param_table_ptr->state_active;
+            request_or_over = param_table_ptr->begin_or_over;
+            broadcast_sequence = param_table_ptr->broadcast_sequence;
+            broadcast_times = param_table_ptr->broadcast_times;
+            break;
+        case MANUAL_ANN_EVENT:
+		    diag_printf("-----------------------------MANUAL_ANN_EVENT-------------\n");
+            state_request = param_table_ptr->state_active;  // 1
+            request_or_over = param_table_ptr->begin_or_over; // 1
+            line_number = param_table_ptr->line_number; // 3
+            current_station_code = param_table_ptr->current_station_code; // ?
+            stop_or_leave = param_table_ptr->stop_or_leave;  // ?
+            manual_pre_read = param_table_ptr->manual_pre_read; // 0
+            break;
+        case LINE_NUMBER_CHANGE_EVENT:
+           line_number = param_table_ptr->line_number;
+           region_number = param_table_ptr->region_number;
+           break;
+        case SKIP_STATION:
+            ts_debug_print(("skip station\n"));
+            line_number = param_table_ptr->line_number;
+            current_station_code = param_table_ptr->current_station_code;
+            current_station_effective = param_table_ptr->station_effective;
+            ts_debug_print(("line_number = %d,current_station_code = %d,current_station_effective = %d\n",line_number,current_station_code,current_station_effective));
+            break;
+        default:
+            //printf("TouchScreenSetCmd:  unknown evetn type\n");
+            return -1;
+    }
+//	return 0;
+    // ���д�뵽��������
+    SetTSCmd( param_table_ptr->event_type,    // event type
+                     ccu_state.ccu_info.devices_name,            // source device name
+                     ccu_state.ccu_info.devices_no, // source device number
+                     state_request,   // state_request -----> active
+                     request_or_over, // request or over ----> begin
+                     line_number,       // line_number
+                     region_number,
+                     broadcast_sequence,  // broadcast_sequence
+                     broadcast_times,        // broadcast_times
+                     stop_or_leave,         // arrived or predict
+                     current_station_code,  // current_station_code
+                     current_station_effective,
+                     manual_pre_read,
+                     dst_device_number     // dst_device_number for intercom
+                   );
+    if(param_table_ptr->event_type == MANUAL_ANN_EVENT)
+    {
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = 8;
+                //bcu_state.region_station_info.os_terminal_station_no;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = 1;
+                //bcu_state.region_station_info.os_begin_station_no;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.line_number = 3;//bcu_state.this_line_no;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.up_down = 1;//bcu_state.region_station_info.os_running_up_or_down;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.door_side = door_side;
+
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.key_side = 0;//bcu_state.bcu_info.devices_no;
+    }
+
+    if(send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code >= 15 && send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code > 0)
+    {
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.up_down = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = 15;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code = 1;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.next_station_code = 2;
+        send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = 0;
+    }
+    else
+    {
+//        send_ts_cmd_to_control.event_info_ann.manual_annnounce.up_down = 1;
+//        send_ts_cmd_to_control.event_info_ann.manual_annnounce.start_station_code = 1;
+//        send_ts_cmd_to_control.event_info_ann.manual_annnounce.end_station_code = 13;
+//        if(send_ts_cmd_to_control.event_info_ann.manual_annnounce.manual_pre_read == 1)
+//        {
+//            send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = 1;
+//        } //pre ann
+//        else
+//        {
+//            send_ts_cmd_to_control.event_info_ann.manual_annnounce.stop_or_leave = 0;
+//            send_ts_cmd_to_control.event_info_ann.manual_annnounce.current_station_code++;
+//            send_ts_cmd_to_control.event_info_ann.manual_annnounce.next_station_code++;
+//        }
+    }
+
+    network_send_package_t manual_ann_info = {"\0",0};
+    memcpy((char *)&manual_ann_info.send_information,(char *)&send_ts_cmd_to_control,sizeof(send_infomation_t));
+    strcpy((char *)manual_ann_info.send_information.src_devices_name,"CCU");
+    manual_ann_info.send_information.src_devices_no = 1;
+    manual_ann_info.send_information.event_type_intercom = INTERCOM_IDLE;
+    manual_ann_info.dst_devices_no =  MUL_DST_NO;
+    strcpy((char *)manual_ann_info.dst_devices_name,"EAMP");
+    
+//    cyg_alarm_disable(alarm_handle_monitor);
+    BlockBufferWrite(ccu_state.ccu_send_cmd_buffer_id, (void *)&manual_ann_info, sizeof(manual_ann_info));
+    return 0;
+}
+
+
+void SetManualCmd(int enter_or_exit,int param_begin_or_over,int param_line_no,int param_station_code,int param_stop_or_leave,int param_whether_pre_read)
+{///<�����ֶ��㲥״̬����
+    diag_printf("zhw **** run into SetManualCmd function\n");
+    diag_printf("MANUAL_ANN_EVENT info:enter_or_exit=%d,param_begin_or_over=%d,param_line_no=%d,param_station_code=%d,param_stop_or_leave=%d,param_whether_pre_read=%d\n"
+            ,enter_or_exit
+            ,param_begin_or_over
+            ,param_line_no
+            ,param_station_code
+            ,param_stop_or_leave
+            ,param_whether_pre_read);
+    bcu_screen_param_t  touch_cmd_param = {0};
+    touch_cmd_param.event_type = MANUAL_ANN_EVENT;
+
+    diag_printf(">>>>> MANUAL_ANN_EVENT = %d\n",MANUAL_ANN_EVENT);
+
+    if(enter_or_exit == 0)//enter
+    {
+        touch_cmd_param.state_active = 1;
+        touch_cmd_param.begin_or_over = 0;
+        touch_cmd_param.line_number = ccu_state.current_line_no;
+        touch_cmd_param.manual_pre_read = 0;
+        touch_cmd_param.current_station_code = ccu_state.ccu_region_info[ccu_state.current_line_no - 3].current_region_info.start_station_no;
+        touch_cmd_param.stop_or_leave = 0;
+    }
+    else if(enter_or_exit == 1)//have enter to manual state
+    {
+        touch_cmd_param.state_active = 1;
+        touch_cmd_param.begin_or_over = param_begin_or_over; // 1
+        touch_cmd_param.line_number = param_line_no;  //3
+        touch_cmd_param.manual_pre_read = param_whether_pre_read;//0
+        touch_cmd_param.current_station_code = param_station_code;//?
+        touch_cmd_param.stop_or_leave = param_stop_or_leave; //1
+    	cyg_alarm_enable(alarm_handle_monitor);
+
+    }
+    else //exit
+    {
+        touch_cmd_param.state_active = 0;
+        touch_cmd_param.begin_or_over = 0;
+        cyg_alarm_disable(alarm_handle_monitor);
+    }
+    touch_cmd_param.begin_station_code = ccu_state.ccu_region_info[0].current_region_info.start_station_no;
+    touch_cmd_param.over_station_code = ccu_state.ccu_region_info[0].current_region_info.over_station_no;
+    touch_cmd_param.line_number = param_line_no;
+    touch_cmd_param.region_number = ccu_state.ccu_region_info[0].current_region_info.region_no;
+
+    SetCmd( (void *)&touch_cmd_param );
+}
+
+
+void SimlateAtuoANNInofFill(send_infomation_t *param_send_package)
+{
+    static unsigned char record_pre_status = 0;
+    static unsigned char door_side = 1;
+    static unsigned char up_down = 1;
+    static unsigned char stop_or_leave = 0;
+    static unsigned char start_station_code = 1;
+    static unsigned char end_station_code = 6;
+    static unsigned char current_station_code = 1;
+    static unsigned char next_station_code = 2;
+    diag_printf("zhw %%%%%% ---- @@@@@@@@@@@@@\n");
+    diag_printf("door_side = %d,up_down = %d,stop_or_leave = %d,start = %d,end = %d,current = %d--next = %d",
+            door_side,up_down,stop_or_leave,start_station_code,end_station_code,current_station_code,next_station_code);
+
+    strcpy(param_send_package->src_devices_name,ccu_state.ccu_info.devices_name);
+    param_send_package->src_devices_no = ccu_state.ccu_info.devices_no;
+    param_send_package->event_type_ann = TMS_AUTO_ANN_EVENT;
+    param_send_package->event_type_intercom = INTERCOM_IDLE;
+    param_send_package->event_info_ann.tms_auto_announce.tms_auto_begin_or_over = 1;
+    param_send_package->event_info_ann.tms_auto_announce.tms_auto_active = 1;
+    param_send_package->event_info_ann.tms_auto_announce.tms_auto_response = 0;
+    param_send_package->event_info_ann.tms_auto_announce.line_number = 3;
+    param_send_package->event_info_ann.tms_auto_announce.tms_auto_pre_read = 0;
+
+    param_send_package->event_info_ann.tms_auto_announce.door_side = door_side;
+    param_send_package->event_info_ann.tms_auto_announce.up_down = up_down;
+    param_send_package->event_info_ann.tms_auto_announce.stop_or_leave = stop_or_leave;
+    param_send_package->event_info_ann.tms_auto_announce.start_station_code  = start_station_code;
+    param_send_package->event_info_ann.tms_auto_announce.end_station_code = end_station_code;
+    param_send_package->event_info_ann.tms_auto_announce.current_station_code = current_station_code;
+    param_send_package->event_info_ann.tms_auto_announce.next_station_code = next_station_code;
+
+    if(stop_or_leave == 0)
+    {
+        record_pre_status = 1;
+    }
+    else
+    {
+        record_pre_status = 2;
+    }
+
+    //RestartSYNCTimer();///<����ͬ����ʱ��
+    cyg_alarm_enable(alarm_handle_monitor);
+    diag_printf("RestartSYNCTimer\n");
+
+
+    network_send_package_t tms_auto_info = {"\0",0};
+    tms_auto_info.dst_devices_no =  MUL_DST_NO;
+    strcpy((char *)tms_auto_info.dst_devices_name,"EAMP");
+    memcpy((char *)&tms_auto_info.send_information,(char *)param_send_package,sizeof(send_infomation_t));
+    strcpy((char *)tms_auto_info.send_information.src_devices_name,"CCU");
+    tms_auto_info.send_information.src_devices_no = 1;
+
+    //udpCtrl->udpWork->tx_udp(&tms_auto_info);
+
+    //ANNStateHangle(&recv_cmd_info_of_ann,param_send_package);/*Handle announcement event*/
+
+    if(current_station_code >= 6 && current_station_code > 0)
+    {
+        up_down = 1;
+        door_side = 1;
+        start_station_code = 1;
+        end_station_code = 6;
+        current_station_code = 1;
+        next_station_code = 2;
+        stop_or_leave = 0;
+    }
+    else
+    {
+        up_down = 1;
+        door_side = 1;
+        start_station_code = 1;
+        end_station_code = 6;
+        if(record_pre_status == 1)
+        {
+            stop_or_leave = 1;
+        } //pre ann
+        else
+        {
+            stop_or_leave = 0;
+            current_station_code++;
+            next_station_code++;
+        }
+    }
+}
+
+void SetTSManualCMDPackage(int param_stop_or_leave,int param_open_door_flag)
+{///<���ô������ֶ���վ�����
+   SetManualCmd(1,1,3,ccu_state.region_station_info.os_current_station_no,param_stop_or_leave,0);//���롢���С��˳�-��ʼ������-��·��-վ����-��վ����վ-Ԥ��
+}
